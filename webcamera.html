@@ -488,6 +488,16 @@
 
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
+      function getMediaSupportError() {
+        if (!window.isSecureContext) {
+          return "カメラ・マイクは HTTPS または localhost でのみ利用できます。file:// や http:// の URL、LINE などアプリ内ブラウザでは開かないでください。GitHub Pages の URL（https://）で開いてください。";
+        }
+        if (!navigator.mediaDevices?.getUserMedia) {
+          return "このブラウザはカメラ・マイク API に対応していません。Chrome / Edge / Firefox / Safari の最新版で、通常のブラウザから開いてください。";
+        }
+        return null;
+      }
+
       function now() {
         return new Date().toLocaleTimeString("ja-JP", { hour12: false });
       }
@@ -533,6 +543,13 @@
       }
 
       async function startMedia() {
+        const supportError = getMediaSupportError();
+        if (supportError) {
+          log(supportError, "error");
+          setStatus("error", "メディア非対応");
+          return;
+        }
+
         try {
           log("カメラ・マイクの取得を開始", "action");
           localStream = await navigator.mediaDevices.getUserMedia({
@@ -868,7 +885,13 @@
         log("Web Speech API非対応 — 文字起こしはChromeで利用可能", "info");
       }
 
-      log("アプリを起動しました", "success");
+      const mediaSupportError = getMediaSupportError();
+      if (mediaSupportError) {
+        log(mediaSupportError, "error");
+        setStatus("error", "メディア非対応");
+      } else {
+        log("アプリを起動しました", "success");
+      }
       updateButtons();
     })();
   </script>
