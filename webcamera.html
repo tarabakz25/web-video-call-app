@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Web Video Call</title>
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <style>
+    :root {
+      --bg: #0b0f14;
+      --surface: #141b24;
+      --surface-2: #1c2633;
+      --border: #2a3647;
+      --text: #e8edf4;
+      --muted: #8b9bb0;
+      --accent: #3d8bfd;
+      --accent-hover: #5a9dff;
+      --success: #34d399;
+      --danger: #f87171;
+      --warning: #fbbf24;
+      --radius: 12px;
+      --shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+      --font: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --mono: "SF Mono", "Fira Code", monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.5;
+    }
+
+    .app {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 100vh;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    header h1 {
+      font-size: 1.35rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+
+    header h1 span {
+      color: var(--accent);
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background 0.3s;
+    }
+
+    .status-dot.connected { background: var(--success); box-shadow: 0 0 8px var(--success); }
+    .status-dot.connecting { background: var(--warning); animation: pulse 1.2s infinite; }
+    .status-dot.error { background: var(--danger); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 16px;
+      flex: 1;
+    }
+
+    @media (max-width: 960px) {
+      .main-grid { grid-template-columns: 1fr; }
+    }
+
+    .video-section {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .video-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    @media (max-width: 640px) {
+      .video-grid { grid-template-columns: 1fr; }
+    }
+
+    .video-wrap {
+      position: relative;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      aspect-ratio: 16 / 10;
+      box-shadow: var(--shadow);
+    }
+
+    .video-wrap video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      background: #000;
+    }
+
+    .video-label {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      padding: 4px 10px;
+      background: rgba(0, 0, 0, 0.65);
+      backdrop-filter: blur(8px);
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+
+    .video-placeholder {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 0.9rem;
+      pointer-events: none;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 9px 16px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface-2);
+      color: var(--text);
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+      font-family: inherit;
+    }
+
+    .btn:hover:not(:disabled) {
+      background: var(--border);
+      border-color: #3d4f66;
+    }
+
+    .btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: var(--accent-hover);
+      border-color: var(--accent-hover);
+    }
+
+    .btn-danger {
+      background: rgba(248, 113, 113, 0.15);
+      border-color: var(--danger);
+      color: var(--danger);
+    }
+
+    .btn-danger:hover:not(:disabled) {
+      background: rgba(248, 113, 113, 0.25);
+    }
+
+    .btn-active {
+      background: rgba(248, 113, 113, 0.2);
+      border-color: var(--danger);
+      color: var(--danger);
+    }
+
+    .connect-panel {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      padding: 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+    }
+
+    .connect-panel input {
+      flex: 1;
+      min-width: 160px;
+      padding: 9px 12px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 0.85rem;
+      font-family: var(--mono);
+    }
+
+    .connect-panel input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .my-id {
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      color: var(--accent);
+      word-break: break-all;
+    }
+
+    .side-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      padding: 10px 14px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .panel-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px;
+      min-height: 0;
+    }
+
+    .chat-panel { flex: 1; min-height: 200px; }
+    .log-panel { max-height: 180px; }
+    .transcript-panel { max-height: 160px; }
+
+    .chat-messages {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-height: 120px;
+    }
+
+    .chat-msg {
+      max-width: 90%;
+      padding: 8px 12px;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      word-break: break-word;
+    }
+
+    .chat-msg.mine {
+      align-self: flex-end;
+      background: var(--accent);
+      color: #fff;
+      border-bottom-right-radius: 3px;
+    }
+
+    .chat-msg.theirs {
+      align-self: flex-start;
+      background: var(--surface-2);
+      border-bottom-left-radius: 3px;
+    }
+
+    .chat-msg .sender {
+      font-size: 0.7rem;
+      opacity: 0.7;
+      margin-bottom: 2px;
+    }
+
+    .chat-input-row {
+      display: flex;
+      gap: 6px;
+      padding: 10px;
+      border-top: 1px solid var(--border);
+    }
+
+    .chat-input-row input {
+      flex: 1;
+      padding: 8px 12px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 0.85rem;
+      font-family: inherit;
+    }
+
+    .chat-input-row input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .log-entry {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      padding: 4px 0;
+      border-bottom: 1px solid rgba(42, 54, 71, 0.5);
+      color: var(--muted);
+      word-break: break-word;
+    }
+
+    .log-entry .time { color: #5a6d85; margin-right: 6px; }
+    .log-entry.info { color: var(--muted); }
+    .log-entry.success { color: var(--success); }
+    .log-entry.error { color: var(--danger); }
+    .log-entry.action { color: var(--accent); }
+
+    .transcript-line {
+      font-size: 0.82rem;
+      padding: 4px 0;
+      color: var(--text);
+      border-bottom: 1px solid rgba(42, 54, 71, 0.4);
+    }
+
+    .transcript-line.interim { color: var(--muted); font-style: italic; }
+
+    .transcript-line .ts {
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      color: var(--muted);
+      margin-right: 6px;
+    }
+
+    .hint {
+      font-size: 0.75rem;
+      color: var(--muted);
+      padding: 0 2px;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Web <span>Video Call</span></h1>
+      <div class="status-badge">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusText">未接続</span>
+      </div>
+    </header>
+
+    <div class="main-grid">
+      <section class="video-section">
+        <div class="video-grid">
+          <div class="video-wrap">
+            <video id="localVideo" autoplay playsinline muted></video>
+            <div class="video-placeholder" id="localPlaceholder">カメラ未開始</div>
+            <span class="video-label">自分</span>
+          </div>
+          <div class="video-wrap">
+            <video id="remoteVideo" autoplay playsinline></video>
+            <div class="video-placeholder" id="remotePlaceholder">相手を待っています</div>
+            <span class="video-label">相手</span>
+          </div>
+        </div>
+
+        <div class="controls">
+          <button class="btn btn-primary" id="btnStartMedia">カメラ・マイク開始</button>
+          <button class="btn" id="btnMute" disabled>マイクミュート</button>
+          <button class="btn" id="btnTranscribe" disabled>文字起こし開始</button>
+          <button class="btn btn-danger" id="btnHangup" disabled>通話終了</button>
+        </div>
+
+        <div class="connect-panel">
+          <span class="hint">自分のID:</span>
+          <span class="my-id" id="myPeerId">—</span>
+          <button class="btn" id="btnCopyId" disabled>IDをコピー</button>
+          <input type="text" id="remotePeerId" placeholder="相手のPeer IDを入力" />
+          <button class="btn btn-primary" id="btnCall" disabled>発信</button>
+        </div>
+        <p class="hint">使い方: 両者が「カメラ・マイク開始」→ 発信側が相手のIDを入力して「発信」。受信側は着信を自動応答します。</p>
+      </section>
+
+      <aside class="side-panel">
+        <div class="panel chat-panel">
+          <div class="panel-header">チャット</div>
+          <div class="panel-body chat-messages" id="chatMessages"></div>
+          <div class="chat-input-row">
+            <input type="text" id="chatInput" placeholder="メッセージを入力..." disabled />
+            <button class="btn btn-primary" id="btnSendChat" disabled>送信</button>
+          </div>
+        </div>
+
+        <div class="panel transcript-panel">
+          <div class="panel-header">
+            文字起こし
+            <span class="hint" id="transcribeStatus">停止中</span>
+          </div>
+          <div class="panel-body" id="transcriptBody"></div>
+        </div>
+
+        <div class="panel log-panel">
+          <div class="panel-header">
+            操作ログ
+            <button class="btn" id="btnClearLog" style="padding:2px 8px;font-size:0.7rem;">クリア</button>
+          </div>
+          <div class="panel-body" id="logBody"></div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const $ = (id) => document.getElementById(id);
+
+      const localVideo = $("localVideo");
+      const remoteVideo = $("remoteVideo");
+      const localPlaceholder = $("localPlaceholder");
+      const remotePlaceholder = $("remotePlaceholder");
+      const statusDot = $("statusDot");
+      const statusText = $("statusText");
+      const myPeerIdEl = $("myPeerId");
+      const logBody = $("logBody");
+      const chatMessages = $("chatMessages");
+      const transcriptBody = $("transcriptBody");
+      const transcribeStatus = $("transcribeStatus");
+
+      let localStream = null;
+      let peer = null;
+      let currentCall = null;
+      let dataConn = null;
+      let isMuted = false;
+      let isTranscribing = false;
+      let recognition = null;
+
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+      function now() {
+        return new Date().toLocaleTimeString("ja-JP", { hour12: false });
+      }
+
+      function log(message, type = "info") {
+        const entry = document.createElement("div");
+        entry.className = `log-entry ${type}`;
+        entry.innerHTML = `<span class="time">[${now()}]</span>${escapeHtml(message)}`;
+        logBody.prepend(entry);
+        while (logBody.children.length > 200) logBody.removeChild(logBody.lastChild);
+      }
+
+      function escapeHtml(str) {
+        const d = document.createElement("div");
+        d.textContent = str;
+        return d.innerHTML;
+      }
+
+      function setStatus(state, text) {
+        statusDot.className = `status-dot ${state}`;
+        statusText.textContent = text;
+      }
+
+      function updateButtons() {
+        const hasMedia = !!localStream;
+        const connected = !!dataConn?.open;
+        $("btnStartMedia").disabled = hasMedia;
+        $("btnMute").disabled = !hasMedia;
+        $("btnTranscribe").disabled = !hasMedia || !SpeechRecognition;
+        $("btnHangup").disabled = !currentCall && !dataConn;
+        $("btnCall").disabled = !hasMedia || !peer;
+        $("btnCopyId").disabled = !peer?.id;
+        $("chatInput").disabled = !connected;
+        $("btnSendChat").disabled = !connected;
+      }
+
+      function showLocalVideo(active) {
+        localPlaceholder.style.display = active ? "none" : "flex";
+      }
+
+      function showRemoteVideo(active) {
+        remotePlaceholder.style.display = active ? "none" : "flex";
+      }
+
+      async function startMedia() {
+        try {
+          log("カメラ・マイクの取得を開始", "action");
+          localStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
+            audio: { echoCancellation: true, noiseSuppression: true },
+          });
+          localVideo.srcObject = localStream;
+          showLocalVideo(true);
+          log("カメラ・マイクを開始しました", "success");
+          initPeer();
+          updateButtons();
+        } catch (err) {
+          log(`メディア取得エラー: ${err.message}`, "error");
+          setStatus("error", "メディアエラー");
+        }
+      }
+
+      function initPeer() {
+        if (peer) return;
+
+        setStatus("connecting", "シグナリング接続中...");
+        log("PeerJSシグナリングサーバーに接続中", "action");
+
+        peer = new Peer(undefined, {
+          host: "0.peerjs.com",
+          port: 443,
+          path: "/",
+          secure: true,
+          config: {
+            iceServers: [
+              { urls: "stun:stun.l.google.com:19302" },
+              { urls: "stun:stun1.l.google.com:19302" },
+            ],
+          },
+        });
+
+        peer.on("open", (id) => {
+          myPeerIdEl.textContent = id;
+          setStatus("", "待機中");
+          log(`Peer IDを取得: ${id}`, "success");
+          updateButtons();
+        });
+
+        peer.on("call", (call) => {
+          log(`着信: ${call.peer}`, "action");
+          if (!localStream) {
+            log("ローカルメディアなし — 着信を拒否", "error");
+            return;
+          }
+          answerCall(call);
+        });
+
+        peer.on("connection", (conn) => {
+          log(`データ接続着信: ${conn.peer}`, "action");
+          setupDataConn(conn);
+        });
+
+        peer.on("error", (err) => {
+          log(`Peerエラー: ${err.message}`, "error");
+          setStatus("error", "接続エラー");
+        });
+
+        peer.on("disconnected", () => {
+          log("シグナリングサーバーから切断 — 再接続試行", "info");
+          setStatus("connecting", "再接続中...");
+          if (!peer.destroyed) peer.reconnect();
+        });
+      }
+
+      function answerCall(call) {
+        currentCall = call;
+        call.answer(localStream);
+
+        call.on("stream", (remoteStream) => {
+          remoteVideo.srcObject = remoteStream;
+          showRemoteVideo(true);
+          log("相手の映像を受信", "success");
+          setStatus("connected", "通話中");
+        });
+
+        call.on("close", () => onCallEnded("相手が通話を終了"));
+        call.on("error", (err) => log(`通話エラー: ${err.message}`, "error"));
+
+        setupDataConn(peer.connect(call.peer));
+        updateButtons();
+      }
+
+      function placeCall() {
+        const remoteId = $("remotePeerId").value.trim();
+        if (!remoteId) {
+          log("相手のPeer IDを入力してください", "error");
+          return;
+        }
+
+        log(`発信: ${remoteId}`, "action");
+        setStatus("connecting", "発信中...");
+
+        currentCall = peer.call(remoteId, localStream);
+        setupDataConn(peer.connect(remoteId));
+
+        currentCall.on("stream", (remoteStream) => {
+          remoteVideo.srcObject = remoteStream;
+          showRemoteVideo(true);
+          log("相手の映像を受信", "success");
+          setStatus("connected", "通話中");
+        });
+
+        currentCall.on("close", () => onCallEnded("通話が終了"));
+        currentCall.on("error", (err) => {
+          log(`発信エラー: ${err.message}`, "error");
+          setStatus("error", "発信失敗");
+        });
+
+        updateButtons();
+      }
+
+      function setupDataConn(conn) {
+        if (dataConn?.open) return;
+        dataConn = conn;
+
+        conn.on("open", () => {
+          log("チャット接続が確立", "success");
+          updateButtons();
+        });
+
+        conn.on("data", (raw) => {
+          try {
+            const msg = typeof raw === "string" ? JSON.parse(raw) : raw;
+            if (msg.type === "chat") {
+              appendChat(msg.text, "theirs", "相手");
+            } else if (msg.type === "transcript") {
+              appendTranscript(msg.text, false, true);
+            }
+          } catch {
+            appendChat(String(raw), "theirs", "相手");
+          }
+        });
+
+        conn.on("close", () => {
+          log("データ接続が切断", "info");
+          dataConn = null;
+          updateButtons();
+        });
+
+        conn.on("error", (err) => log(`データ接続エラー: ${err.message}`, "error"));
+      }
+
+      function sendData(payload) {
+        if (dataConn?.open) {
+          dataConn.send(JSON.stringify(payload));
+        }
+      }
+
+      function appendChat(text, side, sender) {
+        const el = document.createElement("div");
+        el.className = `chat-msg ${side}`;
+        el.innerHTML = `<div class="sender">${escapeHtml(sender)}</div>${escapeHtml(text)}`;
+        chatMessages.appendChild(el);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+
+      function sendChat() {
+        const input = $("chatInput");
+        const text = input.value.trim();
+        if (!text) return;
+        appendChat(text, "mine", "自分");
+        sendData({ type: "chat", text });
+        log(`チャット送信: ${text}`, "action");
+        input.value = "";
+      }
+
+      function toggleMute() {
+        if (!localStream) return;
+        const audioTrack = localStream.getAudioTracks()[0];
+        if (!audioTrack) return;
+        isMuted = !isMuted;
+        audioTrack.enabled = !isMuted;
+        const btn = $("btnMute");
+        btn.textContent = isMuted ? "ミュート解除" : "マイクミュート";
+        btn.classList.toggle("btn-active", isMuted);
+        log(isMuted ? "マイクをミュートしました" : "マイクのミュートを解除しました", "action");
+      }
+
+      function appendTranscript(text, interim = false, fromRemote = false) {
+        if (interim) {
+          let el = transcriptBody.querySelector(".transcript-line.interim");
+          if (!el) {
+            el = document.createElement("div");
+            el.className = "transcript-line interim";
+            transcriptBody.appendChild(el);
+          }
+          el.innerHTML = `<span class="ts">${now()}</span>${escapeHtml(text)}`;
+        } else {
+          const interimEl = transcriptBody.querySelector(".transcript-line.interim");
+          if (interimEl) interimEl.remove();
+
+          const el = document.createElement("div");
+          el.className = "transcript-line";
+          el.innerHTML = `<span class="ts">${now()}</span>${escapeHtml(text)}`;
+          transcriptBody.appendChild(el);
+          transcriptBody.scrollTop = transcriptBody.scrollHeight;
+
+          if (!fromRemote) {
+            sendData({ type: "transcript", text });
+          }
+        }
+      }
+
+      function toggleTranscribe() {
+        if (!SpeechRecognition) {
+          log("このブラウザは音声認識に対応していません（Chrome推奨）", "error");
+          return;
+        }
+
+        if (isTranscribing) {
+          stopTranscription();
+          return;
+        }
+
+        recognition = new SpeechRecognition();
+        recognition.lang = "ja-JP";
+        recognition.continuous = true;
+        recognition.interimResults = true;
+
+        recognition.onstart = () => {
+          isTranscribing = true;
+          $("btnTranscribe").textContent = "文字起こし停止";
+          $("btnTranscribe").classList.add("btn-active");
+          transcribeStatus.textContent = "認識中";
+          log("文字起こしを開始", "action");
+        };
+
+        recognition.onresult = (event) => {
+          let interim = "";
+          let final = "";
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const t = event.results[i][0].transcript;
+            if (event.results[i].isFinal) final += t;
+            else interim += t;
+          }
+          if (interim) appendTranscript(interim, true);
+          if (final) {
+            appendTranscript(final.trim(), false);
+            log(`文字起こし: ${final.trim()}`, "info");
+          }
+        };
+
+        recognition.onerror = (event) => {
+          if (event.error === "no-speech") return;
+          log(`文字起こしエラー: ${event.error}`, "error");
+          if (event.error === "not-allowed") stopTranscription();
+        };
+
+        recognition.onend = () => {
+          if (isTranscribing) {
+            try { recognition.start(); } catch { stopTranscription(); }
+          }
+        };
+
+        try {
+          recognition.start();
+        } catch (err) {
+          log(`文字起こし開始失敗: ${err.message}`, "error");
+        }
+      }
+
+      function stopTranscription() {
+        isTranscribing = false;
+        if (recognition) {
+          recognition.onend = null;
+          recognition.stop();
+          recognition = null;
+        }
+        const interimEl = transcriptBody.querySelector(".transcript-line.interim");
+        if (interimEl) interimEl.remove();
+        $("btnTranscribe").textContent = "文字起こし開始";
+        $("btnTranscribe").classList.remove("btn-active");
+        transcribeStatus.textContent = "停止中";
+        log("文字起こしを停止", "action");
+      }
+
+      function onCallEnded(reason) {
+        log(reason, "info");
+        if (currentCall) {
+          currentCall.close();
+          currentCall = null;
+        }
+        if (dataConn) {
+          dataConn.close();
+          dataConn = null;
+        }
+        remoteVideo.srcObject = null;
+        showRemoteVideo(false);
+        setStatus("", "待機中");
+        updateButtons();
+      }
+
+      function hangup() {
+        log("通話を終了", "action");
+        stopTranscription();
+        onCallEnded("通話を終了しました");
+      }
+
+      function copyId() {
+        if (!peer?.id) return;
+        navigator.clipboard.writeText(peer.id).then(() => {
+          log(`Peer IDをコピー: ${peer.id}`, "action");
+        }).catch(() => log("クリップボードへのコピーに失敗", "error"));
+      }
+
+      $("btnStartMedia").addEventListener("click", startMedia);
+      $("btnMute").addEventListener("click", toggleMute);
+      $("btnTranscribe").addEventListener("click", toggleTranscribe);
+      $("btnHangup").addEventListener("click", hangup);
+      $("btnCall").addEventListener("click", placeCall);
+      $("btnSendChat").addEventListener("click", sendChat);
+      $("btnCopyId").addEventListener("click", copyId);
+      $("btnClearLog").addEventListener("click", () => {
+        logBody.innerHTML = "";
+        log("ログをクリア", "action");
+      });
+
+      $("chatInput").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") sendChat();
+      });
+
+      $("remotePeerId").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") placeCall();
+      });
+
+      if (!SpeechRecognition) {
+        transcribeStatus.textContent = "非対応";
+        log("Web Speech API非対応 — 文字起こしはChromeで利用可能", "info");
+      }
+
+      log("アプリを起動しました", "success");
+      updateButtons();
+    })();
+  </script>
+</body>
+</html>
