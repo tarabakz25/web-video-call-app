@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>P2P メッセージアプリ</title>
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2332;
+      --surface-2: #243044;
+      --border: #334155;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-hover: #7dd3fc;
+      --mine: #0ea5e9;
+      --theirs: #334155;
+      --success: #34d399;
+      --danger: #f87171;
+      --warning: #fbbf24;
+      --radius: 14px;
+      --font: "Hiragino Sans", "Yu Gothic", "Segoe UI", sans-serif;
+      --mono: "SF Mono", "Fira Code", monospace;
+    }
+
+    body.theme-classroom {
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --surface-2: #f1f5f9;
+      --border: #cbd5e1;
+      --text: #0f172a;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --accent-hover: #3b82f6;
+      --mine: #2563eb;
+      --theirs: #e2e8f0;
+    }
+
+    body.theme-game {
+      --bg: #0a0a12;
+      --surface: #151525;
+      --surface-2: #1e1e35;
+      --border: #4c1d95;
+      --text: #e9d5ff;
+      --muted: #a78bfa;
+      --accent: #a855f7;
+      --accent-hover: #c084fc;
+      --mine: #7c3aed;
+      --theirs: #2e1065;
+    }
+
+    body.theme-counseling {
+      --bg: #f0fdf4;
+      --surface: #ffffff;
+      --surface-2: #ecfdf5;
+      --border: #a7f3d0;
+      --text: #14532d;
+      --muted: #4ade80;
+      --accent: #059669;
+      --accent-hover: #10b981;
+      --mine: #059669;
+      --theirs: #d1fae5;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      transition: background 0.3s, color 0.3s;
+    }
+
+    .app {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 100vh;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    header h1 {
+      font-size: 1.25rem;
+      font-weight: 700;
+    }
+
+    header h1 span { color: var(--accent); }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background 0.3s;
+    }
+
+    .dot.new { background: var(--muted); }
+    .dot.connecting { background: var(--warning); animation: pulse 1s infinite; }
+    .dot.connected { background: var(--success); box-shadow: 0 0 6px var(--success); }
+    .dot.disconnected,
+    .dot.closed,
+    .dot.failed { background: var(--danger); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.35; }
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .panel-title {
+      padding: 10px 14px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .setup-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      padding: 14px;
+    }
+
+    @media (max-width: 520px) {
+      .setup-grid { grid-template-columns: 1fr; }
+    }
+
+    label {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+
+    input, select {
+      padding: 9px 12px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 0.88rem;
+      font-family: inherit;
+    }
+
+    input:focus, select:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .id-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      padding: 0 14px 14px;
+    }
+
+    .my-id {
+      font-family: var(--mono);
+      font-size: 0.82rem;
+      color: var(--accent);
+      word-break: break-all;
+      flex: 1;
+    }
+
+    .btn {
+      padding: 8px 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface-2);
+      color: var(--text);
+      font-size: 0.84rem;
+      font-weight: 500;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.15s;
+    }
+
+    .btn:hover:not(:disabled) { background: var(--border); }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .btn-primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: var(--accent-hover);
+      border-color: var(--accent-hover);
+    }
+
+    .stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    .stats strong { color: var(--text); }
+
+    .messages {
+      flex: 1;
+      min-height: 280px;
+      max-height: 50vh;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .msg {
+      max-width: 85%;
+      padding: 8px 12px;
+      border-radius: 12px;
+      font-size: 0.9rem;
+      word-break: break-word;
+      line-height: 1.45;
+    }
+
+    .msg.mine {
+      align-self: flex-end;
+      background: var(--mine);
+      color: #fff;
+      border-bottom-right-radius: 3px;
+    }
+
+    .msg.theirs {
+      align-self: flex-start;
+      background: var(--theirs);
+      border-bottom-left-radius: 3px;
+    }
+
+    .msg .sender {
+      font-size: 0.7rem;
+      opacity: 0.75;
+      margin-bottom: 3px;
+    }
+
+    .msg.system {
+      align-self: center;
+      max-width: 100%;
+      background: transparent;
+      color: var(--muted);
+      font-size: 0.78rem;
+      text-align: center;
+      padding: 4px;
+    }
+
+    .input-row {
+      display: flex;
+      gap: 8px;
+      padding: 12px;
+      border-top: 1px solid var(--border);
+    }
+
+    .input-row input { flex: 1; }
+
+    .warning {
+      display: none;
+      padding: 8px 14px;
+      font-size: 0.8rem;
+      color: var(--danger);
+      background: rgba(248, 113, 113, 0.1);
+      border-top: 1px solid rgba(248, 113, 113, 0.25);
+    }
+
+    .warning.show { display: block; }
+
+    .hints {
+      font-size: 0.75rem;
+      color: var(--muted);
+      padding: 0 2px;
+      line-height: 1.6;
+    }
+
+    .chat-panel { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  </style>
+</head>
+<body class="theme-classroom">
+  <div class="app">
+    <header>
+      <h1>P2P <span>メッセージ</span></h1>
+      <div class="badge">
+        <span class="dot new" id="statusDot"></span>
+        <span id="statusText">未接続</span>
+      </div>
+    </header>
+
+    <div class="panel">
+      <div class="panel-title">接続設定</div>
+      <div class="setup-grid">
+        <label>
+          あなたの名前
+          <input type="text" id="userName" placeholder="例: たろう" maxlength="20" />
+        </label>
+        <label>
+          テーマ
+          <select id="themeSelect">
+            <option value="classroom">授業用</option>
+            <option value="game">ゲーム用</option>
+            <option value="counseling">相談用</option>
+          </select>
+        </label>
+        <label style="grid-column: 1 / -1;">
+          相手の Peer ID
+          <input type="text" id="remotePeerId" placeholder="相手のIDを入力して接続" />
+        </label>
+      </div>
+      <div class="id-row">
+        <span class="hints">自分のID:</span>
+        <span class="my-id" id="myPeerId">接続中...</span>
+        <button class="btn" id="btnCopyId" disabled>コピー</button>
+        <button class="btn btn-primary" id="btnConnect" disabled>接続</button>
+      </div>
+    </div>
+
+    <div class="panel chat-panel">
+      <div class="panel-title">チャット</div>
+      <div class="stats">
+        <span>送信: <strong id="sentCount">0</strong></span>
+        <span>受信: <strong id="recvCount">0</strong></span>
+        <span>P2P状態: <strong id="connState">—</strong></span>
+      </div>
+      <div class="messages" id="messages"></div>
+      <div class="warning" id="emptyWarning">メッセージを入力してください</div>
+      <div class="input-row">
+        <input type="text" id="messageInput" placeholder="メッセージを入力（Enterで送信）" disabled />
+        <button class="btn btn-primary" id="btnSend" disabled>送信</button>
+      </div>
+    </div>
+
+    <p class="hints">
+      コマンド: <code>/time</code> で現在時刻を送信 / <code>/dice</code> で1〜6のランダムな数を送信
+    </p>
+  </div>
+
+  <script>
+    (function () {
+      const $ = (id) => document.getElementById(id);
+
+      let peer = null;
+      let dataConn = null;
+      let sentCount = 0;
+      let recvCount = 0;
+      let connStatePoller = null;
+
+      const STATUS_LABELS = {
+        new: "未接続",
+        connecting: "接続中...",
+        connected: "接続済み",
+        disconnected: "切断",
+        failed: "接続失敗",
+        closed: "終了",
+      };
+
+      function escapeHtml(str) {
+        const d = document.createElement("div");
+        d.textContent = str;
+        return d.innerHTML;
+      }
+
+      function getUserName() {
+        const name = $("userName").value.trim();
+        return name || "名無し";
+      }
+
+      function setStatus(state) {
+        $("statusDot").className = `dot ${state}`;
+        $("statusText").textContent = STATUS_LABELS[state] || state;
+      }
+
+      function setConnState(state) {
+        $("connState").textContent = state || "—";
+      }
+
+      function updateCounts() {
+        $("sentCount").textContent = String(sentCount);
+        $("recvCount").textContent = String(recvCount);
+      }
+
+      function updateButtons() {
+        const ready = !!peer?.id;
+        const connected = !!dataConn?.open;
+        $("btnCopyId").disabled = !ready;
+        $("btnConnect").disabled = !ready;
+        $("messageInput").disabled = !connected;
+        $("btnSend").disabled = !connected;
+      }
+
+      function appendMessage(text, side, sender, isSystem = false) {
+        const el = document.createElement("div");
+        if (isSystem) {
+          el.className = "msg system";
+          el.textContent = text;
+        } else {
+          el.className = `msg ${side}`;
+          el.innerHTML = `<div class="sender">${escapeHtml(sender)}</div>${escapeHtml(text)}`;
+        }
+        $("messages").appendChild(el);
+        $("messages").scrollTop = $("messages").scrollHeight;
+      }
+
+      function showEmptyWarning(show) {
+        $("emptyWarning").classList.toggle("show", show);
+      }
+
+      function resolveCommand(text) {
+        if (text === "/time") {
+          return new Date().toLocaleString("ja-JP", {
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: false,
+          });
+        }
+        if (text === "/dice") {
+          return String(Math.floor(Math.random() * 6) + 1);
+        }
+        return text;
+      }
+
+      function sendMessage() {
+        const input = $("messageInput");
+        const raw = input.value.trim();
+
+        if (!raw) {
+          showEmptyWarning(true);
+          input.focus();
+          return;
+        }
+
+        showEmptyWarning(false);
+        const text = resolveCommand(raw);
+        const name = getUserName();
+
+        appendMessage(text, "mine", name);
+        sentCount++;
+        updateCounts();
+
+        if (dataConn?.open) {
+          dataConn.send(JSON.stringify({ type: "chat", text, name }));
+        }
+
+        if (raw !== text) {
+          appendMessage(`コマンド ${raw} を実行しました`, "system", "", true);
+        }
+
+        input.value = "";
+        input.focus();
+      }
+
+      function handleIncoming(raw) {
+        try {
+          const msg = typeof raw === "string" ? JSON.parse(raw) : raw;
+          if (msg.type === "chat") {
+            appendMessage(msg.text, "theirs", msg.name || "相手");
+            recvCount++;
+            updateCounts();
+          }
+        } catch {
+          appendMessage(String(raw), "theirs", "相手");
+          recvCount++;
+          updateCounts();
+        }
+      }
+
+      function watchConnectionState(conn) {
+        if (connStatePoller) clearInterval(connStatePoller);
+
+        const update = () => {
+          const pc = conn.peerConnection;
+          if (pc) {
+            setConnState(pc.connectionState);
+            if (pc.connectionState === "connected") setStatus("connected");
+            if (pc.connectionState === "connecting") setStatus("connecting");
+            if (pc.connectionState === "disconnected" || pc.connectionState === "failed") {
+              setStatus(pc.connectionState);
+            }
+          }
+        };
+
+        update();
+        connStatePoller = setInterval(update, 500);
+
+        const pc = conn.peerConnection;
+        if (pc) {
+          pc.addEventListener("connectionstatechange", update);
+        }
+      }
+
+      function setupDataConn(conn) {
+        if (dataConn?.open) return;
+        dataConn = conn;
+
+        conn.on("open", () => {
+          setStatus("connected");
+          appendMessage("相手と接続しました。メッセージを送ってみましょう！", "system", "", true);
+          watchConnectionState(conn);
+          updateButtons();
+        });
+
+        conn.on("data", handleIncoming);
+
+        conn.on("close", () => {
+          appendMessage("接続が切断されました", "system", "", true);
+          dataConn = null;
+          setConnState("closed");
+          setStatus("closed");
+          if (connStatePoller) clearInterval(connStatePoller);
+          updateButtons();
+        });
+
+        conn.on("error", (err) => {
+          appendMessage(`エラー: ${err.message}`, "system", "", true);
+          setStatus("failed");
+        });
+      }
+
+      function initPeer() {
+        setStatus("connecting");
+
+        peer = new Peer(undefined, {
+          host: "0.peerjs.com",
+          port: 443,
+          path: "/",
+          secure: true,
+          config: {
+            iceServers: [
+              { urls: "stun:stun.l.google.com:19302" },
+              { urls: "stun:stun1.l.google.com:19302" },
+            ],
+          },
+        });
+
+        peer.on("open", (id) => {
+          $("myPeerId").textContent = id;
+          setStatus("new");
+          updateButtons();
+        });
+
+        peer.on("connection", (conn) => {
+          setupDataConn(conn);
+        });
+
+        peer.on("error", (err) => {
+          appendMessage(`Peerエラー: ${err.message}`, "system", "", true);
+          setStatus("failed");
+        });
+
+        peer.on("disconnected", () => {
+          setStatus("connecting");
+          if (!peer.destroyed) peer.reconnect();
+        });
+      }
+
+      function connectToPeer() {
+        const remoteId = $("remotePeerId").value.trim();
+        if (!remoteId) {
+          appendMessage("相手の Peer ID を入力してください", "system", "", true);
+          return;
+        }
+        if (!peer?.id) return;
+
+        setStatus("connecting");
+        appendMessage(`${remoteId} に接続中...`, "system", "", true);
+        setupDataConn(peer.connect(remoteId));
+        updateButtons();
+      }
+
+      function applyTheme(theme) {
+        document.body.className = `theme-${theme}`;
+        localStorage.setItem("chat-theme", theme);
+      }
+
+      $("themeSelect").addEventListener("change", (e) => {
+        applyTheme(e.target.value);
+      });
+
+      $("btnConnect").addEventListener("click", connectToPeer);
+      $("btnSend").addEventListener("click", sendMessage);
+      $("btnCopyId").addEventListener("click", () => {
+        if (!peer?.id) return;
+        navigator.clipboard.writeText(peer.id).catch(() => {});
+      });
+
+      $("messageInput").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          sendMessage();
+        }
+      });
+
+      $("messageInput").addEventListener("input", () => {
+        if ($("messageInput").value.trim()) showEmptyWarning(false);
+      });
+
+      $("remotePeerId").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") connectToPeer();
+      });
+
+      const savedTheme = localStorage.getItem("chat-theme");
+      if (savedTheme) {
+        $("themeSelect").value = savedTheme;
+        applyTheme(savedTheme);
+      }
+
+      const savedName = localStorage.getItem("chat-name");
+      if (savedName) $("userName").value = savedName;
+
+      $("userName").addEventListener("change", () => {
+        localStorage.setItem("chat-name", $("userName").value.trim());
+      });
+
+      initPeer();
+      updateCounts();
+      updateButtons();
+    })();
+  </script>
+</body>
+</html>
